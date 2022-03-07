@@ -1,0 +1,210 @@
+---
+title: "Blue-tailed skink threat discrimination is risk dependent"
+author: "Alyssa Y. Kong, Lauren Man, Kaylie A. Suan, Daniel T. Blumstein"
+date: "3/6/2022"
+output: html_document
+---
+
+# Clear the environment and Packages
+```{r}
+rm(list=ls())
+library(readr)
+library(ggResidpanel)
+library(emmeans)
+library(ggplot2)
+library(car)
+library(rsq)
+```
+
+# Importing data
+Import datasets: "time_log.csv" and "time_log_noD.csv" for predator analyses and "skink.csv" for all focal and FID analyses.
+
+# Predator analysis
+```{r}
+# Boxplots for all predators
+boxplot(total_pred_rate~site,time_log) # boxplot for predator rate across sites
+
+boxplot(total_pred_rate~risk,time_log) # boxplot for predator rate grouping sites as high or low risk
+pred_plot <- ggplot(time_log, aes(x=risk, y=total_pred_rate)) + stat_boxplot(geom="errorbar", width=0.15) + geom_boxplot(outlier.colour="black", outlier.shape=16,outlier.size=2) + labs(y="Predator Encounter Rate", x="Risk") + scale_x_discrete("Risk", breaks = c("high", "low"), labels = c("High", "Low")) + theme(axis.line = element_line(colour = "black"), panel.background = element_blank())
+pred_plot # neater boxplot for predator rate grouping sites as high or low risk
+
+# Boxplots without dog
+boxplot(total_pred_rate~site,time_log_noD) # boxplot for predator rate across sites
+boxplot(total_pred_rate~risk,time_log_noD) # boxplot for predator rate grouping sites as high or low risk
+
+# T Tests
+## All predators
+t.test(total_pred_rate~risk, data=time_log) # p-value = 0.008464
+
+## Without dog
+t.test(total_pred_rate~risk, data=time_log_noD) # p-value = 0.02958
+
+# GROUP COASTAL SITES AS HIGH RISK AND MOUNTAINOUS SITES AS LOW RISK!
+```
+
+# Checking variables
+```{r}
+# Observer effect
+boxplot(SD~observer, skink) # checks SD across observers
+## AK and KS have similar SD's while LM's SD's are smaller
+
+obs_effect <- lm(SD ~ observer, data = skink)
+anova(obs_effect) # p-value = 9.873e-14
+summary(obs_effect)
+
+# SD across risk
+boxplot(SD~risk, skink) # checks SD between high and low risk sites
+## SD between high and low risk are the same
+
+# SD across treatments
+boxplot(SD~treatment, skink) # checks SD across different treatments
+## SD across treatments are the same except C has slightly smaller SD's
+
+SD_treat <- lm(SD ~ treatment + risk, data = skink)
+anova(SD_treat)
+summary(SD_treat) # checks SD across different treatments statistically
+## SD and risk are the same through all treatments
+```
+
+# Check for confounding variables
+```{r}
+# Beaufort
+wind_treat <- lm(wind_speed ~ treatment, data = skink)
+anova(wind_treat) # p-value = 0.3131
+summary(wind_treat)
+
+# Group size
+group_treat <- lm(con_hetero ~ treatment, data = skink)
+anova(group_treat) # p-value = 0.3634
+summary(group_treat)
+
+# Skink size
+size_treat <- lm(size ~ treatment, data = skink)
+anova(size_treat) # p-value = 0.7941
+summary(size_treat)
+
+# Partially autonomized skinks
+auto_treat <- lm(autonomized ~ treatment, data = skink)
+anova(auto_treat) # p-value = 0.8054
+summary(auto_treat)
+```
+
+# Models
+```{r}
+# Look
+## Base look model
+BM1 <- glm(look ~ treatment + SD + risk_binary + observer
+           + treatment*SD + treatment*risk_binary
+           + offset(log(tot_time_in))
+           , family = 'poisson'
+           , data = skink)
+Anova(BM1)
+summary(BM1)
+
+## Final look model
+M1 <- glm(look ~ treatment + SD + risk_binary + con_hetero + observer
+          + treatment*SD + treatment*risk_binary + treatment*con_hetero
+          + offset(log(tot_time_in))
+          , family = 'poisson'
+          , data = skink)
+
+Anova(M1)
+summary(M1)
+resid_panel(M1)
+
+## R^2 for look model
+rsq(M1, adj=FALSE) # = 0.111
+
+# Locomotion
+## Base locomotion model
+BM2 <- glm(locomotion ~ treatment + SD + risk_binary + observer
+           + treatment*SD + treatment*risk_binary
+           + offset(log(tot_time_in))
+           , family = 'poisson'
+           , data = skink)
+Anova(BM2)
+summary(BM2)
+
+## Final locomotion model
+M2 <- glm(locomotion ~ treatment + SD + risk_binary + observer 
+          + con_hetero + size
+          + treatment*SD + treatment*risk_binary + treatment*con_hetero 
+          + treatment*size
+          + offset(log(tot_time_in))
+          , family = 'poisson'
+          , data = skink)
+Anova(M2)
+summary(M2)
+resid_panel(M2)
+
+## R^2 for locomotion model
+rsq(M2, adj=FALSE) # = 0.125
+
+# FID
+## Base FID model
+bm <- lm(FID ~ treatment + SD + risk + observer
+         + treatment*SD + treatment*risk
+         , data=skink)
+anova(bm)
+summary(bm)
+
+## Base model --> Final FID model
+m1 <- lm(FID ~ treatment + SD + risk + observer
+         + treatment*SD + treatment*risk
+         , data=skink)
+anova(m1)
+summary(m1) # Multiple R^2 = 0.4794; adjusted R^2 = 0.4296; F-statistic = 9.634; p-value = 5.43e-14
+resid_panel(m1)
+```
+
+# Pairwise comparisons
+```{r}
+# Look
+## Emtrends for interaction (treatment*risk) in look model
+pairs(emtrends(M1, ~treatment, var="risk_binary"), adjust="none") # had to use risk_binary because emtrends only accepts numeric variables
+
+# Locomotion
+## Emtrends for interaction (treatment*risk) in locomotion model
+pairs(emtrends(M2, ~treatment, var="risk_binary"), adjust="none")
+
+## Emtrends for interaction (treatment*SD) in locomotion model
+pairs(emtrends(M2, ~treatment, var="SD"), adjust="none") 
+
+## Emtrends for interaction (treatment*size) in locomotion model
+pairs(emtrends(M2, ~treatment, var="size"), adjust="none")
+
+# FID
+## Emmeans for main effect of treatment in FID model
+contrast <- emmeans(m1, "treatment")
+pairs(contrast, adjust="none")
+
+## Cohen's D effect size for main effect of treatment in FID model
+eff_size(contrast, sigma = sigma(m1), edf = df.residual(m1))
+```
+
+# Plots
+```{r}
+# Look
+## Plot for interaction (treatment*risk) in look model
+g1.1 <- ggplot(data = skink, aes (x=risk, y=look, group=treatment, color=treatment, linetype=treatment)) + geom_smooth(method = "glm", alpha = 0.1) + labs(y="Look", x="Risk") + theme(axis.line = element_line(colour = "black"), panel.background = element_blank()) + scale_x_discrete("Risk", breaks = c("_low", "high"), labels = c("Low","High")) + theme(legend.position = "top") + scale_color_discrete(name = "Treatments:", breaks = c("_N", "BC", "C", "S"), labels = c("Control", "Big Circle", "2 Circles", "2 Squares"))  + scale_linetype_manual(values = c("solid", "longdash", "dashed", "dotdash"), name = "Treatments:", breaks = c("_N", "BC", "C", "S"), labels = c("Control", "Big Circle", "2 Circles", "2 Squares"))
+g1.1
+
+# Locomotion
+## Plot for interaction (treatment*risk) in locomotion model
+g2.1 <- ggplot(data = skink, aes (x=risk, y=locomotion, group=treatment, color=treatment, linetype=treatment)) + geom_smooth(method = "glm", alpha = 0.1) + labs(y="Locomotion", x="Risk") + theme(axis.line = element_line(colour = "black"), panel.background = element_blank()) + scale_x_discrete("Risk", breaks = c("_low", "high"), labels = c("Low","High")) + theme(legend.position = "top") + scale_color_discrete(name = "Treatments:", breaks = c("_N", "BC", "C", "S"), labels = c("Control", "Big Circle", "2 Circles", "2 Squares")) + scale_linetype_manual(values = c("solid", "longdash", "dashed", "dotdash"), name = "Treatments:", breaks = c("_N", "BC", "C", "S"), labels = c("Control", "Big Circle", "2 Circles", "2 Squares"))
+g2.1
+
+## Plot for interaction (treatment*SD) in locomotion model
+g2.2 <- ggplot(data = skink, aes (x=SD, y=locomotion, group=treatment, color=treatment, linetype=treatment)) + geom_smooth(method = "glm", alpha = 0.1) + labs(y="Locomotion", x="SD (m)") + theme(axis.line = element_line(colour = "black"), panel.background = element_blank()) + theme(legend.position = "top") + scale_color_discrete(name = "Treatments:", breaks = c("_N", "BC", "C", "S"), labels = c("Control", "Big Circle", "2 Circles", "2 Squares")) + scale_linetype_manual(values = c("solid", "longdash", "dashed", "dotdash"), name = "Treatments:", breaks = c("_N", "BC", "C", "S"), labels = c("Control", "Big Circle", "2 Circles", "2 Squares"))
+g2.2
+
+## Plot for interaction (treatment*size) in locomotion model
+g2.3 <- ggplot(data = skink, aes (x=size, y=locomotion, group=treatment, color=treatment, linetype=treatment)) + geom_smooth(method = "glm", alpha = 0.1) + labs(y="Locomotion", x="Skink Size (cm)") + theme(axis.line = element_line(colour = "black"), panel.background = element_blank()) + theme(legend.position = "top") + scale_color_discrete(name = "Treatments:", breaks = c("_N", "BC", "C", "S"), labels = c("Control", "Big Circle", "2 Circles", "2 Squares")) + scale_linetype_manual(values = c("solid", "longdash", "dashed", "dotdash"), name = "Treatments:", breaks = c("_N", "BC", "C", "S"), labels = c("Control", "Big Circle", "2 Circles", "2 Squares"))
+g2.3
+
+# FID
+## Box plot
+boxplot(FID~treatment,skink)
+FID_plot <- ggplot(skink, aes(x=treatment, y=FID, color=treatment)) + stat_boxplot(geom="errorbar", width=0.15) + geom_boxplot(outlier.colour="black", outlier.shape=16,outlier.size=2) + labs(y="FID (m)", x="Treatment") + scale_x_discrete("Treatment", breaks = c("_N", "BC", "C", "S"), labels = c("Control","Big Circle", "2 Circles", "2 Squares")) + theme(axis.line = element_line(colour = "black"), panel.background = element_blank()) + scale_color_discrete(name = "Treatments:", breaks = c("_N", "BC", "C", "S"), labels = c("Control", "Big Circle", "2 Circles", "2 Squares"))
+FID_plot
+```
